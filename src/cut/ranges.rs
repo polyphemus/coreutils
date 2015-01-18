@@ -24,15 +24,15 @@ impl std::str::FromStr for Range {
         match (parts.next(), parts.next()) {
             (Some(nm), None) => {
                 nm.parse::<usize>().and_then(|nm| if nm > 0 { Some(nm) } else { None })
-                                    .map(|nm| Range { low: nm, high: nm })
+                                   .map(|nm| Range { low: nm, high: nm })
             }
             (Some(n), Some(m)) if m.len() == 0 => {
                 n.parse::<usize>().and_then(|low| if low > 0 { Some(low) } else { None })
-                                   .map(|low| Range { low: low, high: MAX })
+                                  .map(|low| Range { low: low, high: MAX })
             }
             (Some(n), Some(m)) if n.len() == 0 => {
                 m.parse::<usize>().and_then(|high| if high >= 1 { Some(high) } else { None })
-                                   .map(|high| Range { low: 1, high: high })
+                                  .map(|high| Range { low: 1, high: high })
             }
             (Some(n), Some(m)) => {
                 match (n.parse::<usize>(), m.parse::<usize>()) {

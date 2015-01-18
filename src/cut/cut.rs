@@ -198,7 +198,7 @@ fn cut_characters<R: Reader>(reader: R,
 struct Searcher<'a> {
     haystack: &'a [u8],
     needle: &'a [u8],
-    position: usize 
+    position: usize
 }
 
 impl<'a> Searcher<'a> {
