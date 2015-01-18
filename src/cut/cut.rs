@@ -55,10 +55,10 @@ fn list_to_ranges(list: &str, complement: bool) -> Result<Vec<Range>, String> {
 fn cut_bytes<R: Reader>(reader: R,
                         ranges: &Vec<Range>,
                         opts: &Options) -> isize {
-    use buffer::Bytes::Select;
-    use buffer::Bytes::Selected::{NewlineFound, Complete, Partial, EndOfFile};
+    use buffer::Select;
+    use buffer::Selected::{NewlineFound, Complete, Partial, EndOfFile, Invalid};
 
-    let mut buf_read = buffer::BufReader::new(reader);
+    let mut buf_read = buffer::bytes::BytesReader::new(reader);
     let mut out = BufferedWriter::new(stdio::stdout_raw());
 
     'newline: loop {
@@ -74,11 +74,11 @@ fn cut_bytes<R: Reader>(reader: R,
                         out.write(&[b'\n']).unwrap();
                         continue 'newline
                     }
-                    Complete(bytes) => {
-                        cur_pos += bytes.len();
+                    Complete(bytes, selected) => {
+                        cur_pos += selected;
                         break
                     }
-                    Partial(bytes) => cur_pos += bytes.len(),
+                    Partial(bytes, selected) => cur_pos += selected,
                     EndOfFile => {
                         if orig_pos != cur_pos {
                             out.write(&[b'\n']).unwrap();
@@ -86,6 +86,7 @@ fn cut_bytes<R: Reader>(reader: R,
 
                         break 'newline
                     }
+                    Invalid(_) => unreachable!()
                 }
             }
 
@@ -106,13 +107,13 @@ fn cut_bytes<R: Reader>(reader: R,
                         out.write(bytes).unwrap();
                         continue 'newline
                     }
-                    Complete(bytes) => {
+                    Complete(bytes, _) => {
                         out.write(bytes).unwrap();
                         cur_pos = high + 1;
                         break
                     }
-                    Partial(bytes) => {
-                        cur_pos += bytes.len();
+                    Partial(bytes, selected) => {
+                        cur_pos += selected;
                         out.write(bytes).unwrap();
                     }
                     EndOfFile => {
@@ -122,6 +123,7 @@ fn cut_bytes<R: Reader>(reader: R,
 
                         break 'newline
                     }
+                    Invalid(_) => unreachable!()
                 }
             }
         }

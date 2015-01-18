@@ -1,34 +1,22 @@
 use std;
 use std::io::{IoResult, IoError};
 
-pub struct BufReader<R> {
+use self::super::{Select, Selected};
+
+pub struct BytesReader<R> {
     reader: R,
     buffer: [u8; 4096],
     start: usize,
     end: usize,  // exclusive
 }
 
-#[allow(non_snake_case)]
-pub mod Bytes {
-    pub trait Select {
-        fn select<'a>(&'a mut self, bytes: usize) -> Selected<'a>;
-    }
-
-    pub enum Selected<'a> {
-        NewlineFound(&'a [u8]),
-        Complete(&'a [u8]),
-        Partial(&'a [u8]),
-        EndOfFile,
-    }
-}
-
-impl<R: Reader> BufReader<R> {
-    pub fn new(reader: R) -> BufReader<R> {
+impl<R: Reader> BytesReader<R> {
+    pub fn new(reader: R) -> BytesReader<R> {
         let empty_buffer = unsafe {
             std::mem::uninitialized::<[u8; 4096]>()
         };
 
-        BufReader {
+        BytesReader {
             reader: reader,
             buffer: empty_buffer,
             start: 0,
@@ -60,38 +48,10 @@ impl<R: Reader> BufReader<R> {
             Ok(0)
         }
     }
-
-    pub fn consume_line(&mut self) -> usize {
-        let mut bytes_consumed = 0;
-
-        loop {
-            match self.maybe_fill_buf() {
-                Ok(0) | Err(IoError { kind: std::io::EndOfFile, .. })
-                    if self.start == self.end => return bytes_consumed,
-                Err(err) => panic!("read error: {}", err.desc),
-                _ => ()
-            }
-
-            let filled_buf = &self.buffer[self.start..self.end];
-
-            match filled_buf.position_elem(&b'\n') {
-                Some(idx) => {
-                    self.start += idx + 1;
-                    return bytes_consumed + idx + 1;
-                }
-                _ => ()
-            }
-
-            bytes_consumed += filled_buf.len();
-
-            self.start = 0;
-            self.end = 0;
-        }
-    }
 }
 
-impl<R: Reader> Bytes::Select for BufReader<R> {
-    fn select<'a>(&'a mut self, bytes: usize) -> Bytes::Selected<'a> {
+impl<R: Reader> Select for BytesReader<R> {
+    fn select<'a>(&'a mut self, bytes: usize) -> Selected<'a> {
         match self.maybe_fill_buf() {
             Err(IoError { kind: std::io::EndOfFile, .. }) => (),
             Err(err) => panic!("read error: {}", err.desc),
@@ -99,7 +59,7 @@ impl<R: Reader> Bytes::Select for BufReader<R> {
         }
 
         let newline_idx = match self.end - self.start {
-            0 => return Bytes::Selected::EndOfFile,
+            0 => return Selected::EndOfFile,
             buf_used if bytes < buf_used => {
                 // because the output delimiter should only be placed between
                 // segments check if the byte after bytes is a newline
@@ -112,7 +72,7 @@ impl<R: Reader> Bytes::Select for BufReader<R> {
 
                         self.start += bytes;
 
-                        return Bytes::Selected::Complete(segment);
+                        return Selected::Complete(segment);
                     }
                 }
             }
@@ -127,7 +87,7 @@ impl<R: Reader> Bytes::Select for BufReader<R> {
                         self.start = 0;
                         self.end = 0;
 
-                        return Bytes::Selected::Partial(segment);
+                        return Selected::Partial(segment, segment.len());
                     }
                 }
             }
@@ -137,6 +97,34 @@ impl<R: Reader> Bytes::Select for BufReader<R> {
         let segment = &self.buffer[self.start..new_start];
 
         self.start = new_start;
-        Bytes::Selected::NewlineFound(segment)
+        Selected::NewlineFound(segment)
+    }
+
+    fn consume_line(&mut self) -> Result<usize, String> {
+        let mut bytes_consumed = 0;
+
+        loop {
+            match self.maybe_fill_buf() {
+                Ok(0) | Err(IoError { kind: std::io::EndOfFile, .. })
+                    if self.start == self.end => return Ok(bytes_consumed),
+                Err(err) => panic!("read error: {}", err.desc),
+                _ => ()
+            }
+
+            let filled_buf = &self.buffer[self.start..self.end];
+
+            match filled_buf.position_elem(&b'\n') {
+                Some(idx) => {
+                    self.start += idx + 1;
+                    return Ok(bytes_consumed + idx + 1);
+                }
+                _ => ()
+            }
+
+            bytes_consumed += filled_buf.len();
+
+            self.start = 0;
+            self.end = 0;
+        }
     }
 }
