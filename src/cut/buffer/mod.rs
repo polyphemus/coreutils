@@ -1,4 +1,5 @@
 pub mod bytes;
+pub mod characters;
 
 pub trait Select {
     fn select<'a>(&'a mut self, selected: usize) -> Selected<'a>;
@@ -7,7 +8,7 @@ pub trait Select {
 
 pub enum Selected<'a> {
     Complete(&'a [u8]),
-    NewlineFound(&'a [u8], usize),
+    NewlineFound(&'a [u8]),
     Partial(&'a [u8], usize),
     Invalid(&'a [u8]),
     EndOfFile,

@@ -52,13 +52,12 @@ fn list_to_ranges(list: &str, complement: bool) -> Result<Vec<Range>, String> {
     }
 }
 
-fn cut_bytes<R: Reader>(reader: R,
-                        ranges: &Vec<Range>,
-                        opts: &Options) -> isize {
+fn cut_non_fields<B: buffer::Select>(mut buffer: B,
+                             ranges: &Vec<Range>,
+                             opts: &Options) -> isize {
     use buffer::Select;
     use buffer::Selected::{NewlineFound, Complete, Partial, EndOfFile, Invalid};
 
-    let mut buf_read = buffer::bytes::BytesReader::new(reader);
     let mut out = BufferedWriter::new(stdio::stdout_raw());
 
     'newline: loop {
@@ -69,13 +68,13 @@ fn cut_bytes<R: Reader>(reader: R,
             // skip upto low
             let orig_pos = cur_pos;
             loop {
-                match buf_read.select(low - cur_pos) {
+                match buffer.select(low - cur_pos) {
                     NewlineFound(_) => {
                         out.write(&[b'\n']).unwrap();
                         continue 'newline
                     }
-                    Complete(bytes, selected) => {
-                        cur_pos += selected;
+                    Complete(bytes) => {
+                        cur_pos += low - cur_pos;
                         break
                     }
                     Partial(bytes, selected) => cur_pos += selected,
@@ -102,12 +101,12 @@ fn cut_bytes<R: Reader>(reader: R,
 
             // write out from low to high
             loop {
-                match buf_read.select(high - cur_pos + 1) {
+                match buffer.select(high - cur_pos + 1) {
                     NewlineFound(bytes) => {
                         out.write(bytes).unwrap();
                         continue 'newline
                     }
-                    Complete(bytes, _) => {
+                    Complete(bytes) => {
                         out.write(bytes).unwrap();
                         cur_pos = high + 1;
                         break
@@ -128,66 +127,7 @@ fn cut_bytes<R: Reader>(reader: R,
             }
         }
 
-        buf_read.consume_line();
-        out.write(&[b'\n']).unwrap();
-    }
-
-    0
-}
-
-fn cut_characters<R: Reader>(reader: R,
-                             ranges: &Vec<Range>,
-                             opts: &Options) -> isize {
-    let mut buf_in = BufferedReader::new(reader);
-    let mut out = BufferedWriter::new(stdio::stdout_raw());
-
-    'newline: loop {
-        let line = match buf_in.read_line() {
-            Ok(line) => line,
-            Err(std::io::IoError { kind: std::io::EndOfFile, .. }) => break,
-            _ => panic!(),
-        };
-
-        let mut char_pos = 0;
-        let mut char_indices = line.as_slice().char_indices();
-        let mut print_delim = false;
-
-        for &Range { low, high } in ranges.iter() {
-            let low_idx = match char_indices.nth(low - char_pos - 1) {
-                Some((low_idx, _)) => low_idx,
-                None => break
-            };
-
-            match opts.out_delim {
-                Some(ref delim) => {
-                    if print_delim {
-                        out.write(delim.as_bytes()).unwrap();
-                    }
-                    print_delim = true;
-                }
-                None => ()
-            }
-
-            match char_indices.nth(high - low) {
-                Some((high_idx, _)) => {
-                    let segment = &line.as_bytes()[low_idx..high_idx];
-
-                    out.write(segment).unwrap();
-                }
-                None => {
-                    let bytes = line.as_bytes();
-                    let segment = &bytes[low_idx..];
-
-                    out.write(segment).unwrap();
-
-                    if line.as_bytes()[bytes.len() - 1] == b'\n' {
-                        continue 'newline
-                    }
-                }
-            }
-
-            char_pos = high + 1;
-        }
+        buffer.consume_line();
         out.write(&[b'\n']).unwrap();
     }
 
@@ -409,10 +349,12 @@ fn cut_files(mut filenames: Vec<String>, mode: Mode) -> isize {
 
             exit_code |= match mode {
                 Mode::Bytes(ref ranges, ref opts) => {
-                    cut_bytes(stdio::stdin_raw(), ranges, opts)
+                    let buffer = buffer::bytes::BytesReader::new(stdio::stdin_raw());
+                    cut_non_fields(buffer, ranges, opts)
                 }
                 Mode::Characters(ref ranges, ref opts) => {
-                    cut_characters(stdio::stdin_raw(), ranges, opts)
+                    let buffer = buffer::characters::CharsReader::new(stdio::stdin_raw());
+                    cut_non_fields(buffer, ranges, opts)
                 }
                 Mode::Fields(ref ranges, ref opts) => {
                     cut_fields(stdio::stdin_raw(), ranges, opts)
@@ -437,9 +379,13 @@ fn cut_files(mut filenames: Vec<String>, mode: Mode) -> isize {
             };
 
             exit_code |= match mode {
-                Mode::Bytes(ref ranges, ref opts) => cut_bytes(file, ranges, opts),
+                Mode::Bytes(ref ranges, ref opts) => {
+                    let buffer = buffer::bytes::BytesReader::new(file);
+                    cut_non_fields(buffer, ranges, opts)
+                }
                 Mode::Characters(ref ranges, ref opts) => {
-                    cut_characters(file, ranges, opts)
+                    let buffer = buffer::characters::CharsReader::new(file);
+                    cut_non_fields(buffer, ranges, opts)
                 }
                 Mode::Fields(ref ranges, ref opts) => cut_fields(file, ranges, opts)
             };
