@@ -450,41 +450,34 @@ pub fn uumain(args: Vec<String>) -> isize {
         (Some(byte_ranges), None, None) => {
             list_to_ranges(byte_ranges.as_slice(), complement).map(|ranges|
                 Mode::Bytes(ranges,
-                      Options { out_delim: matches.opt_str("output-delimiter") })
+                            Options { out_delim: matches.opt_str("output-delimiter") })
             )
         }
         (None, Some(char_ranges), None) => {
             list_to_ranges(char_ranges.as_slice(), complement).map(|ranges|
                 Mode::Characters(ranges,
-                           Options { out_delim: matches.opt_str("output-delimiter") })
+                                 Options { out_delim: matches.opt_str("output-delimiter") })
             )
         }
         (None, None, Some(field_ranges)) => {
             list_to_ranges(field_ranges.as_slice(), complement).and_then(|ranges|
                 {
-                    let out_delim = matches.opt_str("output-delimiter");
-                    let only_delimited = matches.opt_present("only-delimited");
-
-                    match matches.opt_str("delimiter") {
+                    let delim = match matches.opt_str("delimiter") {
                         Some(delim) => {
-                            if delim.as_slice().chars().count() != 1 {
-                                Err("the delimiter must be a single character".to_string())
-                            } else {
-                                Ok(Mode::Fields(ranges,
-                                          FieldOptions {
-                                              delimiter: delim,
-                                              out_delimeter: out_delim,
-                                              only_delimited: only_delimited
-                                          }))
+                            if delim.chars().count() != 1 {
+                                return Err("the delimiter must be a single character".to_string())
                             }
+                            delim
                         }
-                        None => Ok(Mode::Fields(ranges,
-                                          FieldOptions {
-                                              delimiter: "\t".to_string(),
-                                              out_delimeter: out_delim,
-                                              only_delimited: only_delimited
-                                          }))
-                    }
+                        None => "\t".to_string()
+                    };
+
+                    Ok(Mode::Fields(ranges,
+                                    FieldOptions {
+                                        delimiter: delim,
+                                        out_delimeter: matches.opt_str("output-delimiter"),
+                                        only_delimited: matches.opt_present("only-delimited"),
+                                    }))
                 }
             )
         }
